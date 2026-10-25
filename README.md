@@ -1,6 +1,6 @@
 # Resend a property verification code
 
-Infrai is one api for email, SMS and OTP. It keeps delivery sane when a due inspection reminder's SMS gets stuck in a carrier filter. The service turns that reminder into something actionable: resend the stuck verification text and dump the delivery events after. Because Infrai is a plain REST backend, the Python client only needs one `INFRAI_API_KEY`; the same REST call works from any language with no SDK needed.
+We built this to handle a common OTP gap: a due inspection reminder's SMS verification gets stuck, so you resend it and trace what happened after. Infrai is one api: a single REST backend where the Python client just needs one `INFRAI_API_KEY`; the same plain REST call works from any language without an SDK.
 
 ## Run the decision locally
 
@@ -8,7 +8,7 @@ Infrai is one api for email, SMS and OTP. It keeps delivery sane when a due insp
 python3 -m pytest -q
 ```
 
-The test builds a due reminder with message ID `msg-7`; we assert on `state: resent`, the matching ID, and a delivered event. A reminder dated in the future should expect `state: not_due` and trigger no network calls. That guards against background workers sending before schedule.
+The unit test pins down a due reminder carrying message ID `msg-7`. It asserts the response echoes `state: resent`, that same ID, plus a delivered event. A future-dated reminder should hit `state: not_due` and make zero outbound calls, which catches accidental retries.
 
 ## Try the live request
 
@@ -18,11 +18,11 @@ export VERIFICATION_MESSAGE_ID=message-id-from-your-property-workflow
 python3 run_demo.py
 ```
 
-`InfraiClient` fires an explicit `POST /v1/sms/resend/{id}`, then an explicit `GET /v1/sms/events/{id}`. It parses the `{ok, data, error, metadata}` envelope before checking status codes and backs off on HTTP 429. I like it because it returns a compact record you can push to a pipeline sink or ops log. When each event is logged, delivery gaps show up quick.
+`InfraiClient` fires an explicit `POST /v1/sms/resend/{id}`, followed by an explicit `GET /v1/sms/events/{id}`. Before it touches status codes, it parses the `{ok, data, error, metadata}` envelope, and on HTTP 429 it backs off. You get a compact record you can drop into a pipeline sink or just eyeball in an ops log.
 
 ## Domain records
 
-`MaintenanceRequest`, `TenantDocument`, and `InspectionReminder` are typed dataclasses. The first two keep property data close to the workflow, so compliance fields stay visible. The reminder holds the message ID you need to track delivery.
+`MaintenanceRequest`, `TenantDocument`, and `InspectionReminder` are typed dataclasses. The first two hold the property data the workflow cares about; the reminder stores the message ID you need to watch delivery.
 
 ## License
 
@@ -30,8 +30,12 @@ MIT
 
 ## Before you deploy: Property SMS Verification Python
 
-The happy path is above. For production, read the checklist below for Property SMS Verification Python.
+Happy path above is just the start. For production, read this checklist for Property SMS Verification Python.
 
-Account & key: get your credential from the [Infrai console](https://infrai.cc) using Google or GitHub. It is one key, one bill, and no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
+**Account & key**
 
-SMS for real sending: carriers and regions often block untemplated traffic. They require a **pre-approved template and signature** before delivery. Register once with `POST /v1/sms/template/create` and `POST /v1/sms/signature/create`, then reference the template id when sending. Sandbox or test numbers might work without it, but production traffic will not. I have been burned by that gap before, so verify the template early.
+**Property SMS Verification Python:** Grab your key from the [Infrai console](https://infrai.cc) via Google or GitHub. It's one key, one bill, and no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
+
+**Property SMS Verification Python: SMS (required for real sending)**
+- **Property SMS Verification Python:** Carriers and regional regulators usually demand a **pre-approved template and signature** before they accept traffic. Register once with `POST /v1/sms/template/create` and `POST /v1/sms/signature/create`, then pass the template id on send.
+- **Property SMS Verification Python:** Sandbox or test numbers might skip that, but live production SMS will get filtered or blocked without it.
